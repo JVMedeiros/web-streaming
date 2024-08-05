@@ -1,6 +1,7 @@
 const API_URL = 'http://localhost:3000'
+let counter = 0
 
-async function consumeApi(signal) {
+async function consumeAPI(signal) {
   const response = await fetch(API_URL, {
     signal
   })
@@ -9,7 +10,7 @@ async function consumeApi(signal) {
     .pipeThrough(parseNDJSON())
   // .pipeTo(new WritableStream({
   //   write(chunk) {
-  //     console.log('chunk ->', chunk)
+  //     console.log(++counter, 'chunk', chunk)
   //   }
   // }))
 
@@ -20,27 +21,31 @@ function appendToHTML(element) {
   return new WritableStream({
     write({ title, description, url_anime }) {
       const card = `
-        <article>
-          <div class="text">
-            <h3>${title}</h3>
-            <p>${description.slice(0, 100)}</p>
-            <a href="${url_anime}">Here's why</a>
-          </div>
-        </article>
-      `;
-      element.appendChild += card
+      <article>
+        <div class="text">
+          <h3>[${++counter}] ${title}</h3>
+          <p>${description.slice(0, 100)}</p>
+          <a href="${url_anime}"> Here's why</a>
+        </div>
+      </article>
+      `
+      element.innerHTML += card
+    },
+    abort(reason) {
+      console.log('aborted**', reason)
     }
   })
 }
-
-// Esta função vai se certificar para que caso cheguem dois chunks cheguem em uma unica transmissão converta corretamente para JSON
+// essa função vai se certificar que caso dois chunks cheguem em uma unica transmissao
+// converta corretamente para JSON
 function parseNDJSON() {
   let ndjsonBuffer = ''
   return new TransformStream({
     transform(chunk, controller) {
       ndjsonBuffer += chunk
       const items = ndjsonBuffer.split('\n')
-      items.slice(0, -1).forEach(item => controller.enqueue(JSON.parse(item)))
+      items.slice(0, -1)
+        .forEach(item => controller.enqueue(JSON.parse(item)))
 
       ndjsonBuffer = items[items.length - 1]
     },
@@ -50,7 +55,6 @@ function parseNDJSON() {
     }
   })
 }
-
 const [
   start,
   stop,
@@ -59,8 +63,13 @@ const [
 
 let abortController = new AbortController()
 start.addEventListener('click', async () => {
-  const readable = await consumeApi(abortController.signal)
-  readable.pipeTo(appendToHTML(cards))
+  try {
+    const readable = await consumeAPI(abortController.signal)
+    // add signal and await to handle the abortError exception after abortion
+    await readable.pipeTo(appendToHTML(cards), { signal: abortController.signal })
+  } catch (error) {
+    if (!error.message.includes('abort')) throw error
+  }
 })
 
 stop.addEventListener('click', () => {
